@@ -63,6 +63,7 @@ async def scan_receipt(file: UploadFile = File(...)):
         }
     """
     try:
+        logger.info(f"--- OCRリクエスト開始: {file.filename} ---")
         start_time = time.time()
         process = psutil.Process()
         
@@ -87,8 +88,8 @@ async def scan_receipt(file: UploadFile = File(...)):
         processed_image = preprocess_image(image)
         step_start = log_perf("Preprocess", step_start)
         
-        # OCR実行
-        custom_config = r'--oem 3 --psm 6 -l jpn+jpn_vert'
+        # OCR実行（処理速度優先で日本語のみに限定）
+        custom_config = r'--oem 3 --psm 6 -l jpn'
         ocr_text = pytesseract.image_to_string(processed_image, config=custom_config)
         step_start = log_perf("Tesseract OCR", step_start)
         

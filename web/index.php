@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => ['file' => $cfile],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 120, // 30s -> 120s に延長
+            CURLOPT_TIMEOUT => 90, // Renderの100秒制限に合わせ、90秒に調整
         ]);
 
         $response = curl_exec($ch);
