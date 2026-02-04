@@ -14,7 +14,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 // API設定
-define('API_URL', 'https://ocr-api-0sv3.onrender.com');
+define('API_URL', 'https://ocr-api-wh2v.onrender.com');
 
 // CSV保存先
 define('CSV_FILE', 'result.csv');
@@ -26,43 +26,43 @@ $csv_download_url = null;
 
 // POSTリクエスト処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
+    
     // 画像アップロード処理
     if (isset($_FILES['receipt_image']) && $_FILES['receipt_image']['error'] === UPLOAD_ERR_OK) {
-
+        
         $tmp_name = $_FILES['receipt_image']['tmp_name'];
         $file_name = $_FILES['receipt_image']['name'];
-
+        
         // APIにファイルを送信
         $ch = curl_init();
         $cfile = new CURLFile($tmp_name, $_FILES['receipt_image']['type'], $file_name);
-
+        
         curl_setopt_array($ch, [
             CURLOPT_URL => API_URL . '/scan',
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => ['file' => $cfile],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 90, // Renderの100秒制限に合わせ、90秒に調整
+            CURLOPT_TIMEOUT => 90,           // タイムアウトを90秒に延長
+            CURLOPT_CONNECTTIMEOUT => 30,    // 接続タイムアウトは30秒
         ]);
-
+        
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $info = curl_getinfo($ch);
-
+        
         if (curl_errno($ch)) {
-            $error = 'API接続エラー: ' . curl_error($ch) . ' (Time: ' . $info['total_time'] . 's)';
+            $error = 'API接続エラー: ' . curl_error($ch);
         } elseif ($http_code !== 200) {
             $error = "APIエラー (HTTP $http_code): " . $response;
         } else {
             $result = json_decode($response, true);
-
+            
             // CSV生成
             if ($result && isset($result['items'])) {
                 generate_csv($result);
                 $csv_download_url = CSV_FILE;
             }
         }
-
+        
         curl_close($ch);
     } else {
         $error = '画像ファイルを選択してください';
@@ -72,44 +72,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /**
  * CSV生成
  */
-function generate_csv($data)
-{
+function generate_csv($data) {
     $fp = fopen(CSV_FILE, 'w');
-
+    
     // BOM追加（Excel対応）
-    fprintf($fp, chr(0xEF) . chr(0xBB) . chr(0xBF));
-
+    fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));
+    
     // ヘッダー
     fputcsv($fp, ['商品名', '価格']);
-
+    
     // 商品データ
     foreach ($data['items'] as $item) {
         fputcsv($fp, [$item['name'], $item['price']]);
     }
-
+    
     // 合計
     if (isset($data['total']) && $data['total']) {
         fputcsv($fp, ['合計', $data['total']]);
     }
-
+    
     fclose($fp);
 }
 
 /**
  * OCRログ取得
  */
-function get_ocr_logs()
-{
+function get_ocr_logs() {
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => API_URL . '/logs/ocr',
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 10,
     ]);
-
+    
     $response = curl_exec($ch);
     curl_close($ch);
-
+    
     return $response ?: 'ログが取得できませんでした';
 }
 
@@ -120,14 +118,12 @@ $logs = $show_logs ? get_ocr_logs() : null;
 ?>
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ファミマレシートOCR</title>
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
     <div class="container">
         <header>
@@ -142,7 +138,13 @@ $logs = $show_logs ? get_ocr_logs() : null;
                     <label for="receipt_image" class="file-label">
                         📷 レシート画像を選択
                     </label>
-                    <input type="file" name="receipt_image" id="receipt_image" accept="image/*" required>
+                    <input 
+                        type="file" 
+                        name="receipt_image" 
+                        id="receipt_image" 
+                        accept="image/*"
+                        required
+                    >
                     <span id="fileName" class="file-name">ファイル未選択</span>
                 </div>
                 <button type="submit" class="btn btn-primary">🔍 OCR実行</button>
@@ -160,7 +162,7 @@ $logs = $show_logs ? get_ocr_logs() : null;
         <?php if ($result && isset($result['success']) && $result['success']): ?>
             <section class="result-section">
                 <h2>📊 抽出結果</h2>
-
+                
                 <!-- フォーマット済み出力 -->
                 <div class="formatted-output">
                     <strong>抽出データ:</strong>
@@ -238,18 +240,32 @@ $logs = $show_logs ? get_ocr_logs() : null;
 
     <script>
         // ファイル名表示
-        document.getElementById('receipt_image').addEventListener('change', function (e) {
+        document.getElementById('receipt_image').addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || 'ファイル未選択';
             document.getElementById('fileName').textContent = fileName;
         });
 
         // フォーム送信時のローディング表示
-        document.getElementById('uploadForm').addEventListener('submit', function () {
+        document.getElementById('uploadForm').addEventListener('submit', function() {
             const btn = this.querySelector('button[type="submit"]');
-            btn.textContent = '⏳ 処理中...';
+            btn.textContent = '⏳ 処理中...（初回は1分ほどかかる場合があります）';
             btn.disabled = true;
+            
+            // ローディングメッセージを表示
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'alert alert-info';
+            loadingDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; font-weight: bold;">🔄 OCR処理中...</p>
+                    <p style="font-size: 0.9em; color: #666;">
+                        ※ 初回起動時は最大1分かかる場合があります<br>
+                        そのままお待ちください
+                    </p>
+                </div>
+            `;
+            this.insertAdjacentElement('afterend', loadingDiv);
         });
     </script>
 </body>
-
 </html>

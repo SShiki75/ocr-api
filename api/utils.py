@@ -48,7 +48,7 @@ def preprocess_image(image: Image.Image) -> Image.Image:
     return result
 
 
-def resize_image(image: Image.Image, max_width: int = 1000) -> Image.Image:
+def resize_image(image: Image.Image, max_width: int = 1500) -> Image.Image:
     """
     画像を適切なサイズにリサイズ（OCR精度向上のため）
     """
