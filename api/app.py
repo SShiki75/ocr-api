@@ -71,8 +71,10 @@ async def scan_receipt(file: UploadFile = File(...)):
         image = resize_image(image)
         processed_image = preprocess_image(image)
         
-        # OCR実行（日本語 + 縦書き対応）
-        custom_config = r'--oem 3 --psm 6 -l jpn+jpn_vert'
+        # OCR実行（日本語 + 縦書き対応 + 高精度設定）
+        # PSM 6: 単一ブロックのテキストとみなす（レシートに最適）
+        # OEM 3: LSTM + Legacy（最高精度）
+        custom_config = r'--oem 3 --psm 6 -l jpn'
         ocr_text = pytesseract.image_to_string(processed_image, config=custom_config)
         
         logger.info(f"OCR完了: {len(ocr_text)} 文字")

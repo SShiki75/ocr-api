@@ -13,19 +13,21 @@ class ReceiptParser:
     """
     
     EXCLUDE_KEYWORDS = [
-        '軽', '合計', '小計', '対象', '消費税', '税等', '内',
-        '交通系', 'マネー', '支払', 'カード', '番号', '残高',
-        'レジ', '領収証', '登録番号', '電話', 'FamilyMart',
-        '店', '東京', '新宿', '年', '月', '日', '時', '分',
-        'クーポン', 'QR', 'ギフト', 'アプリ', '発行', '受取'
+        '軽', '合計', '小計', '対象', '消費税', '税等', '内', '税込',
+        '交通系', 'マネー', '支払', 'カード', '番号', '残高', 'レジ',
+        '領収', '登録番号', '電話', 'FamilyMart', '店', '東京', '年',
+        '月', '日', '時', '分', '秒', 'クーポン', 'QR', 'ギフト',
+        'アプリ', '発行', '受取', '確認', 'コード', 'タップ', 'ポイント',
+        'お預り', 'おつり', 'お釣', 'お買上', 'ありがとう', 'またのご',
+        'レシート', 'ファミマ', '以上', '未満', '点数', '割引'
     ]
     
     def __init__(self):
-        # 価格パターン: ¥123 or 123円 or ¥123軽
-        self.price_pattern = re.compile(r'[¥￥]?\s*(\d{1,5})\s*[円軽]?')
+        # 価格パターン: ¥123 or ¥123軽 or 123円
+        self.price_pattern = re.compile(r'[¥￥]\s*(\d{1,5})\s*[軽円]?')
         
         # 合計金額パターン
-        self.total_pattern = re.compile(r'(合計|小計|計)\s*[¥￥]?\s*(\d{1,5})')
+        self.total_pattern = re.compile(r'(合計|小計|計|お買上)\s*[¥￥]?\s*(\d{1,5})')
     
     def parse(self, ocr_text: str) -> Dict:
         """
@@ -49,16 +51,22 @@ class ReceiptParser:
             # 合計金額を検出
             total_match = self.total_pattern.search(line)
             if total_match:
-                total_amount = int(total_match.group(2))
-                continue
+                try:
+                    total_amount = int(total_match.group(2))
+                    continue
+                except:
+                    pass
             
             # 除外キーワードを含む行はスキップ
             if any(keyword in line for keyword in self.EXCLUDE_KEYWORDS):
                 continue
             
             # 価格パターンを検出
-            price_match = self.price_pattern.search(line)
-            if price_match:
+            price_matches = list(self.price_pattern.finditer(line))
+            
+            if price_matches:
+                # 最後の価格を商品価格とみなす
+                price_match = price_matches[-1]
                 price = int(price_match.group(1))
                 
                 # 商品名を抽出（価格の前の部分）
@@ -69,13 +77,24 @@ class ReceiptParser:
                 
                 # 有効な商品名のみ追加
                 if product_name and len(product_name) >= 2:
-                    items.append({
-                        "name": product_name,
-                        "price": price
-                    })
+                    # 価格が妥当か確認（10円〜10000円）
+                    if 10 <= price <= 10000:
+                        items.append({
+                            "name": product_name,
+                            "price": price
+                        })
+        
+        # 重複除去（同じ商品名・価格の組み合わせ）
+        seen = set()
+        unique_items = []
+        for item in items:
+            key = (item['name'], item['price'])
+            if key not in seen:
+                seen.add(key)
+                unique_items.append(item)
         
         return {
-            "items": items,
+            "items": unique_items,
             "total": total_amount
         }
     
@@ -83,20 +102,31 @@ class ReceiptParser:
         """
         商品名をクリーニング
         
-        - 先頭の記号（◎、○、など）は保持
+        - 記号や空白を正規化
         - 数字のみの行は除外
-        - 空白を正規化
+        - 意味のない文字列を除外
         """
-        # 空白を正規化
+        # 前後の空白と記号を削除
+        name = name.strip(' \t\n\r\f\v。、，．,.')
+        
+        # 連続する空白を単一スペースに
         name = re.sub(r'\s+', '', name)
         
         # 数字のみの場合は除外
         if name.isdigit():
             return ""
         
-        # 特殊記号の後に何もない場合は除外
-        if len(name) == 1 and not name.isalnum():
+        # 1文字の場合は除外（記号など）
+        if len(name) == 1:
             return ""
+        
+        # 記号だけの場合は除外
+        if re.match(r'^[◎○●△▲◇◆□■@＠\-ー\|｜]+$', name):
+            return ""
+        
+        # 先頭の記号は残す（◎天然水など）
+        # 末尾の余計な記号は削除
+        name = re.sub(r'[。、，．,.]+$', '', name)
         
         return name
     
