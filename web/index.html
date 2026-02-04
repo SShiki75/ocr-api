@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>レシートOCR - 直接API版</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -19,13 +21,7 @@
                     <label for="receipt_image" class="file-label">
                         📷 レシート画像を選択
                     </label>
-                    <input 
-                        type="file" 
-                        name="receipt_image" 
-                        id="receipt_image" 
-                        accept="image/*"
-                        required
-                    >
+                    <input type="file" name="receipt_image" id="receipt_image" accept="image/*" required>
                     <span id="fileName" class="file-name">ファイル未選択</span>
                 </div>
                 <button type="submit" class="btn btn-primary">🔍 OCR実行</button>
@@ -52,19 +48,26 @@
         <!-- OCR結果表示 -->
         <div id="resultSection" style="display: none;"></div>
 
+        <section class="log-section">
+            <h2>📋 ログ管理</h2>
+            <div class="log-buttons">
+                <button onclick="viewLogs()" class="btn btn-secondary">📄 ログを表示</button>
+                <a id="downloadLogLink" href="#" class="btn btn-success" style="display: none;">💾 ログをダウンロード</a>
+                <button onclick="clearLogs()" class="btn btn-danger"
+                    style="background: #dc3545; color: white; border: none; border-radius: 8px; padding: 12px 30px; cursor: pointer; font-weight: 600;">🗑️
+                    ログをクリア</button>
+            </div>
+            <div id="logViewer" class="log-viewer" style="display: none;">
+                <h3>最新のOCRログ</h3>
+                <pre id="logContent"></pre>
+            </div>
+        </section>
+
         <footer>
             <p>Powered by Tesseract OCR + FastAPI</p>
-            <p style="font-size: 0.9em; margin-top: 5px;">
-                ブラウザから直接 <code>ocr-api-0sv3.onrender.com</code> に接続
+            <p style="font-size: 0.9em; margin-top: 5px;" id="currentApiUrl">
+                API: ${API_URL}
             </p>
-            <div style="margin-top: 15px;">
-                <a href="https://ocr-api-0sv3.onrender.com/logs/ocr/download" 
-                   download="ocr.log" 
-                   class="btn btn-secondary"
-                   style="display: inline-block; text-decoration: none;">
-                    💾 OCRログをダウンロード
-                </a>
-            </div>
         </footer>
     </div>
 
@@ -72,13 +75,13 @@
         const API_URL = 'https://ocr-api-0sv3.onrender.com';
 
         // ファイル名表示
-        document.getElementById('receipt_image').addEventListener('change', function(e) {
+        document.getElementById('receipt_image').addEventListener('change', function (e) {
             const fileName = e.target.files[0]?.name || 'ファイル未選択';
             document.getElementById('fileName').textContent = fileName;
         });
 
         // フォーム送信
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
 
             const fileInput = document.getElementById('receipt_image');
@@ -136,7 +139,7 @@
             }
 
             const resultDiv = document.getElementById('resultSection');
-            
+
             let html = `
                 <section class="result-section">
                     <h2>📊 抽出結果</h2>
@@ -236,6 +239,52 @@
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // API URLを表示に反映
+        document.getElementById('currentApiUrl').textContent = `API: ${API_URL}`;
+
+        // ログダウンロードリンクを初期化
+        const downloadLink = document.getElementById('downloadLogLink');
+        downloadLink.href = `${API_URL}/logs/ocr/download`;
+        downloadLink.style.display = 'inline-block';
+
+        // ログ表示
+        async function viewLogs() {
+            try {
+                const response = await fetch(`${API_URL}/logs/ocr`);
+                const text = await response.text();
+                const logViewer = document.getElementById('logViewer');
+                const logContent = document.getElementById('logContent');
+
+                logContent.textContent = text;
+                logViewer.style.display = 'block';
+                logViewer.scrollIntoView({ behavior: 'smooth' });
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                alert('ログの取得に失敗しました');
+            }
+        }
+
+        // ログクリア
+        async function clearLogs() {
+            if (!confirm('本当にログを消去しますか？')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/logs/ocr`, { method: 'DELETE' });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('ログをクリアしました');
+                    if (document.getElementById('logViewer').style.display === 'block') {
+                        viewLogs(); // 内容を更新
+                    }
+                }
+            } catch (error) {
+                console.error('Error clearing logs:', error);
+                alert('ログのクリアに失敗しました');
+            }
+        }
     </script>
 </body>
+
 </html>
