@@ -8,7 +8,7 @@
 
 header('Content-Type: text/html; charset=utf-8');
 
-$api_url = 'https://ocr-api-wh2v.onrender.com';
+$api_url = 'https://ocr-api-0sv3.onrender.com';
 $results = [];
 
 // テスト1: ヘルスチェック
