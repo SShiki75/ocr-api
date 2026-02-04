@@ -26,9 +26,11 @@ class ReceiptParser:
     ]
     
     def __init__(self):
-        # 価格パターン: \247, ¥247, %247 (OCRの誤認識に対応)
-        # TesseractはしばしばY¥を%と誤認識する
-        self.price_pattern = re.compile(r'[¥￥\\%]\s*(\d{2,5})\s*[/軽円]?')
+        # 価格パターン: \247, ¥247, %247, \24/7 (OCRの誤認識に対応)
+        # TesseractはしばしばY¥を%と誤認識し、7を/と誤認識する
+        # グループ1: 数字部分（2〜5桁）
+        # グループ2（オプション）: 後続の/や軽など
+        self.price_pattern = re.compile(r'[¥￥\\%]\s*(\d{2,5})([/\\軽円]?)')
         
         # 合計金額パターン
         self.total_pattern = re.compile(r'(合計|小計|計|お買上|買上|言十|書十)')
@@ -55,9 +57,17 @@ class ReceiptParser:
             # 最後の価格を使用
             price_match = price_matches[-1]
             price_str = price_match.group(1)
+            suffix = price_match.group(2) if price_match.lastindex >= 2 else ''
+            
+            # contextは価格の周辺テキスト（マッチ全体 + 後続5文字）
+            context = line[price_match.start():price_match.end()+5]
+            
+            # suffixに/がある場合、価格文字列に7を追加
+            if suffix and '/' in suffix:
+                price_str = price_str + '7'
             
             # 価格補正
-            price_str, was_corrected = self._correct_ocr_price(price_str, line[price_match.start():])
+            price_str, was_corrected = self._correct_ocr_price(price_str, context)
             
             try:
                 price = int(price_str)
@@ -124,20 +134,7 @@ class ReceiptParser:
         original = price_str
         corrected = False
         
-        # 1桁価格の場合（例: %98 → \198, %68 → \168）
-        if len(price_str) == 2:
-            # 68 → 168, 98 → 198 のようなパターン
-            # ファミマの商品価格は100円台が多い
-            if 50 <= int(price_str) <= 99:
-                price_str = '1' + price_str
-                corrected = True
-        
-        # 2桁価格で/が続く場合、末尾に7を追加
-        elif len(price_str) == 2 and re.search(r'[/\\]', context):
-            price_str = price_str + '7'
-            corrected = True
-        
-        # 一般的な文字置換
+        # まず文字置換を実行
         replacements = {
             '/': '7', 'l': '1', 'I': '1',
             'B': '8', 'b': '8',
@@ -150,6 +147,27 @@ class ReceiptParser:
             if old in price_str:
                 price_str = price_str.replace(old, new)
                 corrected = True
+        
+        # 文字置換後に2桁の場合の処理
+        if len(price_str) == 2:
+            try:
+                num = int(price_str)
+                
+                # パターン1: 50-99の2桁 → 100円台の可能性（先頭に1を追加）
+                # ただし、contextに/がない場合のみ
+                if 50 <= num <= 99 and '/' not in context and '\\' not in context:
+                    price_str = '1' + price_str
+                    corrected = True
+                
+                # パターン2: 10-49の2桁で、/や\がcontextにある → 末尾に7
+                elif 10 <= num <= 49 and (re.search(r'[/\\]', context) or '軽' in context):
+                    # すでに/が7に変換されているはずなので、このケースは稀
+                    # ただし、元の価格文字列に/が含まれていた場合のフォールバック
+                    if '/' in original or '\\' in original:
+                        price_str = price_str + '7'
+                        corrected = True
+            except:
+                pass
         
         return price_str, corrected
     
