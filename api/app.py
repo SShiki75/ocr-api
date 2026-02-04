@@ -7,6 +7,8 @@ import io
 import os
 from datetime import datetime
 import logging
+import time
+import psutil
 
 from utils import preprocess_image, resize_image
 from receipt_parser import ReceiptParser
@@ -61,33 +63,50 @@ async def scan_receipt(file: UploadFile = File(...)):
         }
     """
     try:
+        start_time = time.time()
+        process = psutil.Process()
+        
+        def log_perf(step, start):
+            elapsed = time.time() - start
+            mem = process.memory_info().rss / (1024 * 1024)
+            logger.info(f"PERF - {step}: {elapsed:.2f}s, Memory: {mem:.1f}MB")
+            return time.time()
+
         # 画像読み込み
+        step_start = time.time()
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
+        step_start = log_perf("Read Image", step_start)
         
         logger.info(f"画像受信: {file.filename}, サイズ: {image.size}")
         
         # 画像前処理
         image = resize_image(image)
-        processed_image = preprocess_image(image)
+        step_start = log_perf("Resize", step_start)
         
-        # OCR実行（日本語 + 縦書き対応）
+        processed_image = preprocess_image(image)
+        step_start = log_perf("Preprocess", step_start)
+        
+        # OCR実行
         custom_config = r'--oem 3 --psm 6 -l jpn+jpn_vert'
         ocr_text = pytesseract.image_to_string(processed_image, config=custom_config)
+        step_start = log_perf("Tesseract OCR", step_start)
         
         logger.info(f"OCR完了: {len(ocr_text)} 文字")
-        logger.info(f"OCR結果:\n{ocr_text}")
         
         # レシート解析
         result = parser.parse(ocr_text)
         formatted = parser.format_output(result)
+        step_start = log_perf("Parsing", step_start)
         
-        logger.info(f"解析結果: {formatted}")
+        total_elapsed = time.time() - start_time
+        logger.info(f"解析完了: {formatted} (Total: {total_elapsed:.2f}s)")
         
         # ログに記録
         log_entry = f"\n{'='*50}\n"
         log_entry += f"ファイル名: {file.filename}\n"
         log_entry += f"処理時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        log_entry += f"処理時間: {total_elapsed:.2f}s\n"
         log_entry += f"抽出結果: {formatted}\n"
         log_entry += f"{'='*50}\n"
         
