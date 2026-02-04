@@ -1,0 +1,377 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #333;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+
+header {
+    background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);
+    color: white;
+    padding: 40px 30px;
+    text-align: center;
+}
+
+header h1 {
+    font-size: 2.2em;
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+
+header p {
+    font-size: 1.1em;
+    opacity: 0.9;
+}
+
+section {
+    padding: 30px;
+    border-bottom: 1px solid #eee;
+}
+
+section:last-of-type {
+    border-bottom: none;
+}
+
+/* アップロードセクション */
+.upload-section {
+    background: #f8f9fa;
+}
+
+.file-input-wrapper {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.file-label {
+    display: inline-block;
+    padding: 15px 30px;
+    background: #4CAF50;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.3s;
+    margin-bottom: 10px;
+}
+
+.file-label:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+input[type="file"] {
+    display: none;
+}
+
+.file-name {
+    display: block;
+    margin-top: 10px;
+    color: #666;
+    font-size: 0.95em;
+}
+
+/* ボタン */
+.btn {
+    display: inline-block;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    text-align: center;
+}
+
+.btn-primary {
+    background: #0072ff;
+    color: white;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    background: #0056cc;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 114, 255, 0.3);
+}
+
+.btn-primary:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+    margin: 5px;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+/* アラート */
+.alert {
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin: 20px 30px;
+    font-weight: 500;
+}
+
+.alert-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+/* 結果セクション */
+.result-section {
+    background: #fff;
+}
+
+.result-section h2 {
+    color: #0072ff;
+    margin-bottom: 20px;
+    font-size: 1.6em;
+}
+
+.formatted-output {
+    background: #e7f3ff;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    border-left: 4px solid #0072ff;
+}
+
+.result-text {
+    font-size: 1.1em;
+    color: #333;
+    line-height: 1.6;
+    margin-top: 10px;
+}
+
+/* テーブル */
+.items-table {
+    margin: 25px 0;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+thead {
+    background: #0072ff;
+    color: white;
+}
+
+th, td {
+    padding: 15px;
+    text-align: left;
+}
+
+th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.9em;
+    letter-spacing: 0.5px;
+}
+
+tbody tr {
+    border-bottom: 1px solid #eee;
+    transition: background 0.2s;
+}
+
+tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.price {
+    text-align: right;
+    font-weight: 600;
+    color: #0072ff;
+}
+
+.total-row {
+    background: #f0f7ff;
+    font-weight: bold;
+}
+
+.total-row td {
+    font-size: 1.1em;
+}
+
+/* ダウンロードボタン */
+.download-buttons {
+    display: flex;
+    gap: 15px;
+    margin: 25px 0;
+    flex-wrap: wrap;
+}
+
+/* OCR生テキスト */
+.raw-text-section {
+    margin-top: 25px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    background: #f8f9fa;
+}
+
+.raw-text-section summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #0072ff;
+    padding: 5px;
+    user-select: none;
+}
+
+.raw-text-section summary:hover {
+    color: #0056cc;
+}
+
+.raw-text-section pre {
+    margin-top: 15px;
+    padding: 15px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.9em;
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ログセクション */
+.log-section {
+    background: #f8f9fa;
+}
+
+.log-section h2 {
+    color: #6c757d;
+    margin-bottom: 20px;
+}
+
+.log-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.log-viewer {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.log-viewer h3 {
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.log-viewer pre {
+    background: #f4f4f4;
+    padding: 15px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85em;
+    line-height: 1.4;
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+}
+
+/* フッター */
+footer {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-size: 0.9em;
+    background: #f8f9fa;
+}
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+    header h1 {
+        font-size: 1.6em;
+    }
+    
+    header p {
+        font-size: 1em;
+    }
+    
+    section {
+        padding: 20px;
+    }
+    
+    .download-buttons {
+        flex-direction: column;
+    }
+    
+    .btn {
+        width: 100%;
+    }
+    
+    table {
+        font-size: 0.9em;
+    }
+    
+    th, td {
+        padding: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        border-radius: 12px;
+    }
+    
+    header {
+        padding: 25px 20px;
+    }
+    
+    header h1 {
+        font-size: 1.4em;
+    }
+}

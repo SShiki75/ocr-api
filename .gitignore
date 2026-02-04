@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# ログファイル
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CSV出力
+result.csv
+
+# 環境変数
+.env
