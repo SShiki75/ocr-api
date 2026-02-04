@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシートOCR - 直接API版</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧾 ファミリーマート レシートOCR（直接API版）</h1>
+            <p>ブラウザから直接APIに接続（infinityfree制限を回避）</p>
+        </header>
+
+        <section class="upload-section">
+            <form id="uploadForm">
+                <div class="file-input-wrapper">
+                    <label for="receipt_image" class="file-label">
+                        📷 レシート画像を選択
+                    </label>
+                    <input 
+                        type="file" 
+                        name="receipt_image" 
+                        id="receipt_image" 
+                        accept="image/*"
+                        required
+                    >
+                    <span id="fileName" class="file-name">ファイル未選択</span>
+                </div>
+                <button type="submit" class="btn btn-primary">🔍 OCR実行</button>
+            </form>
+        </section>
+
+        <!-- ローディング表示 -->
+        <div id="loadingDiv" style="display: none;">
+            <div class="alert alert-info">
+                <div style="text-align: center; padding: 20px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; font-weight: bold;">🔄 OCR処理中...</p>
+                    <p style="font-size: 0.9em; color: #666;">
+                        ※ 初回起動時は最大1分かかる場合があります<br>
+                        そのままお待ちください
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- エラー表示 -->
+        <div id="errorDiv" style="display: none;"></div>
+
+        <!-- OCR結果表示 -->
+        <div id="resultSection" style="display: none;"></div>
+
+        <footer>
+            <p>Powered by Tesseract OCR + FastAPI</p>
+            <p style="font-size: 0.9em; margin-top: 5px;">
+                ブラウザから直接 <code>ocr-api-wh2v.onrender.com</code> に接続
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        const API_URL = 'https://ocr-api-wh2v.onrender.com';
+
+        // ファイル名表示
+        document.getElementById('receipt_image').addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || 'ファイル未選択';
+            document.getElementById('fileName').textContent = fileName;
+        });
+
+        // フォーム送信
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('receipt_image');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('画像を選択してください');
+                return;
+            }
+
+            // UI更新
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('errorDiv').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'none';
+            this.querySelector('button').disabled = true;
+
+            // FormData作成
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                console.log('Uploading to:', API_URL + '/scan');
+                console.log('File:', file.name, file.size, 'bytes');
+
+                const response = await fetch(API_URL + '/scan', {
+                    method: 'POST',
+                    body: formData,
+                    mode: 'cors',
+                });
+
+                console.log('Response status:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                }
+
+                const data = await response.json();
+                console.log('Result:', data);
+
+                displayResult(data);
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError(error.message);
+            } finally {
+                document.getElementById('loadingDiv').style.display = 'none';
+                this.querySelector('button').disabled = false;
+            }
+        });
+
+        function displayResult(data) {
+            if (!data.success || !data.items) {
+                showError('OCR処理に失敗しました');
+                return;
+            }
+
+            const resultDiv = document.getElementById('resultSection');
+            
+            let html = `
+                <section class="result-section">
+                    <h2>📊 抽出結果</h2>
+                    
+                    <div class="formatted-output">
+                        <strong>抽出データ:</strong>
+                        <p class="result-text">${escapeHtml(data.formatted)}</p>
+                    </div>
+
+                    <div class="items-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>商品名</th>
+                                    <th>価格</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            data.items.forEach(item => {
+                html += `
+                    <tr>
+                        <td>${escapeHtml(item.name)}</td>
+                        <td class="price">¥${item.price.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+            if (data.total) {
+                html += `
+                    <tr class="total-row">
+                        <td><strong>合計</strong></td>
+                        <td class="price"><strong>¥${data.total.toLocaleString()}</strong></td>
+                    </tr>
+                `;
+            }
+
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="download-buttons">
+                        <button onclick="downloadCSV()" class="btn btn-success">
+                            📥 CSV ダウンロード
+                        </button>
+                    </div>
+
+                    <details class="raw-text-section">
+                        <summary>🔍 OCR生テキストを表示</summary>
+                        <pre>${escapeHtml(data.raw_text)}</pre>
+                    </details>
+                </section>
+            `;
+
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+
+            // CSV用にデータを保存
+            window.currentResult = data;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.innerHTML = `
+                <div class="alert alert-error">
+                    ❌ ${escapeHtml(message)}
+                </div>
+            `;
+            errorDiv.style.display = 'block';
+        }
+
+        function downloadCSV() {
+            if (!window.currentResult) return;
+
+            let csv = '\ufeff'; // BOM for Excel
+            csv += '商品名,価格\n';
+
+            window.currentResult.items.forEach(item => {
+                csv += `"${item.name}",${item.price}\n`;
+            });
+
+            if (window.currentResult.total) {
+                csv += `"合計",${window.currentResult.total}\n`;
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'result.csv';
+            link.click();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -23,11 +23,14 @@ class ReceiptParser:
     ]
     
     def __init__(self):
-        # 価格パターン: ¥123 or ¥123軽 or 123円
-        self.price_pattern = re.compile(r'[¥￥]\s*(\d{1,5})\s*[軽円]?')
+        # 価格パターン: \247 or ¥247 or \24/ or \247軽 
+        # Tesseractは¥を\と誤認識し、数字も誤認識することがあるため柔軟に対応
+        # [¥￥\\] = 円マーク各種とバックスラッシュ
+        # [/軽円]? = スラッシュ、軽、円などが続くことがある
+        self.price_pattern = re.compile(r'[¥￥\\]\s*(\d{1,5})\s*[/軽円]?')
         
-        # 合計金額パターン
-        self.total_pattern = re.compile(r'(合計|小計|計|お買上)\s*[¥￥]?\s*(\d{1,5})')
+        # 合計金額パターン（より柔軟に）
+        self.total_pattern = re.compile(r'(合計|小計|計|お買上|買上)\s*[¥￥\\]?\s*(\d{1,5})')
     
     def parse(self, ocr_text: str) -> Dict:
         """
@@ -48,41 +51,73 @@ class ReceiptParser:
             if not line:
                 continue
             
-            # 合計金額を検出
+            # 合計金額を検出（複数パターン）
             total_match = self.total_pattern.search(line)
             if total_match:
                 try:
-                    total_amount = int(total_match.group(2))
+                    total_str = total_match.group(2)
+                    # OCR誤認識補正
+                    total_str = self._correct_ocr_price(total_str, line)
+                    total_amount = int(total_str)
                     continue
                 except:
                     pass
             
-            # 除外キーワードを含む行はスキップ
-            if any(keyword in line for keyword in self.EXCLUDE_KEYWORDS):
-                continue
+            # 合計が漢字で誤認識されている場合も検出
+            # 例: "書十" → "合計", "うロロ" → "355"
+            if '書' in line or '十' in line:
+                # 価格パターンで金額を探す
+                price_matches_for_total = list(self.price_pattern.finditer(line))
+                if price_matches_for_total:
+                    try:
+                        price_str = price_matches_for_total[-1].group(1)
+                        price_str = self._correct_ocr_price(price_str, line)
+                        total_candidate = int(price_str)
+                        # 合計金額として妥当か（100円以上）
+                        if total_candidate >= 100:
+                            total_amount = total_candidate
+                            continue
+                    except:
+                        pass
             
             # 価格パターンを検出
             price_matches = list(self.price_pattern.finditer(line))
             
-            if price_matches:
-                # 最後の価格を商品価格とみなす
-                price_match = price_matches[-1]
-                price = int(price_match.group(1))
+            if not price_matches:
+                continue
+            
+            # 最後の価格を商品価格とみなす
+            price_match = price_matches[-1]
+            try:
+                price_str = price_match.group(1)
                 
-                # 商品名を抽出（価格の前の部分）
-                product_name = line[:price_match.start()].strip()
+                # OCR誤認識の補正
+                # 例: "24/" → "247", "10B" → "108"
+                price_str = self._correct_ocr_price(price_str, line[price_match.start():price_match.end()+5])
                 
-                # 商品名のクリーニング
-                product_name = self._clean_product_name(product_name)
-                
-                # 有効な商品名のみ追加
-                if product_name and len(product_name) >= 2:
-                    # 価格が妥当か確認（10円〜10000円）
-                    if 10 <= price <= 10000:
-                        items.append({
-                            "name": product_name,
-                            "price": price
-                        })
+                price = int(price_str)
+            except:
+                continue
+            
+            # 商品名を抽出（価格の前の部分）
+            product_name = line[:price_match.start()].strip()
+            
+            # 除外キーワードチェック（商品名部分のみ）
+            # 「軽」は価格部分にあるので、商品名には影響しない
+            if any(keyword in product_name for keyword in self.EXCLUDE_KEYWORDS):
+                continue
+            
+            # 商品名のクリーニング
+            product_name = self._clean_product_name(product_name)
+            
+            # 有効な商品名のみ追加
+            if product_name and len(product_name) >= 2:
+                # 価格が妥当か確認（10円〜10000円）
+                if 10 <= price <= 10000:
+                    items.append({
+                        "name": product_name,
+                        "price": price
+                    })
         
         # 重複除去（同じ商品名・価格の組み合わせ）
         seen = set()
@@ -97,6 +132,42 @@ class ReceiptParser:
             "items": unique_items,
             "total": total_amount
         }
+    
+    def _correct_ocr_price(self, price_str: str, context: str) -> str:
+        """
+        OCRの価格誤認識を補正
+        
+        よくある誤認識:
+        - 7 → / や l
+        - 8 → B
+        - 0 → O
+        - 5 → S
+        
+        例:
+        - "24/" → "247" (context: "\24/軽")
+        - "10B" → "108" (context: "\10B軽")
+        """
+        # contextから手がかりを得る
+        # 例: "\24/軽" なら / を 7 に変換すべき
+        
+        # 2桁または3桁で末尾が / → 7に変換
+        if len(price_str) in [2, 3] and '/' in context:
+            price_str = price_str.replace('/', '7')
+        
+        # 末尾が B → 8に変換
+        if 'B' in context or 'b' in context:
+            price_str = price_str.replace('B', '8').replace('b', '8')
+        
+        # O → 0 に変換（ゼロと大文字O）
+        price_str = price_str.replace('O', '0').replace('o', '0')
+        
+        # S → 5 に変換
+        price_str = price_str.replace('S', '5').replace('s', '5')
+        
+        # l（小文字L）→ 1 に変換
+        price_str = price_str.replace('l', '1').replace('I', '1')
+        
+        return price_str
     
     def _clean_product_name(self, name: str) -> str:
         """
