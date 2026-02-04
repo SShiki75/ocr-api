@@ -19,7 +19,10 @@ class ReceiptParser:
         '月', '日', '時', '分', '秒', 'クーポン', 'QR', 'ギフト',
         'アプリ', '発行', '受取', '確認', 'コード', 'タップ', 'ポイント',
         'お預り', 'おつり', 'お釣', 'お買上', 'ありがとう', 'またのご',
-        'レシート', 'ファミマ', '以上', '未満', '点数', '割引'
+        'レシート', 'ファミマ', '以上', '未満', '点数', '割引',
+        # OCR誤認識パターン
+        '消明', '通泉', '交高', '史', '半旬', '書十', 'うロロ', '3ロロ',
+        '富録', '生還', 'ルツ', '貢No', '昌和', 'mmm', 'Faimilly'
     ]
     
     def __init__(self):
@@ -65,20 +68,38 @@ class ReceiptParser:
             
             # 合計が漢字で誤認識されている場合も検出
             # 例: "書十" → "合計", "うロロ" → "355"
-            if '書' in line or '十' in line:
-                # 価格パターンで金額を探す
+            # パターン: 漢字 + 価格
+            if re.search(r'[書十計]', line):
+                # 価格パターンで金額を探す（全ての価格候補）
                 price_matches_for_total = list(self.price_pattern.finditer(line))
-                if price_matches_for_total:
+                for pm in price_matches_for_total:
                     try:
-                        price_str = price_matches_for_total[-1].group(1)
-                        price_str = self._correct_ocr_price(price_str, line)
+                        price_str = pm.group(1)
+                        # 数字が誤認識されている場合の補正
+                        # "うロロ" → "355", "3ロロ" → "355"
+                        if 'ロ' in line[pm.start():pm.end()+5]:
+                            # ロ → 5 に変換
+                            price_str = price_str.replace('ロ', '5')
+                            # 残りのロも変換
+                            remaining_text = line[pm.end():pm.end()+5]
+                            count_ro = remaining_text.count('ロ')
+                            if count_ro >= 2:
+                                price_str = price_str + '55'
+                            elif count_ro == 1:
+                                price_str = price_str + '5'
+                        
+                        price_str = self._correct_ocr_price(price_str, line[pm.start():])
                         total_candidate = int(price_str)
-                        # 合計金額として妥当か（100円以上）
-                        if total_candidate >= 100:
+                        
+                        # 合計金額として妥当か（100円以上、かつ他の商品より大きい）
+                        if 100 <= total_candidate <= 10000:
                             total_amount = total_candidate
-                            continue
+                            break
                     except:
-                        pass
+                        continue
+                
+                if total_amount:
+                    continue
             
             # 価格パターンを検出
             price_matches = list(self.price_pattern.finditer(line))
@@ -112,6 +133,11 @@ class ReceiptParser:
             
             # 有効な商品名のみ追加
             if product_name and len(product_name) >= 2:
+                # 価格が2桁で、contextに/がある場合は末尾に7を追加
+                # 例: 24 + "\24/軽" → 247
+                if 10 <= price < 100 and '/' in line[price_match.start():]:
+                    price = price * 10 + 7
+                
                 # 価格が妥当か確認（10円〜10000円）
                 if 10 <= price <= 10000:
                     items.append({
@@ -144,27 +170,29 @@ class ReceiptParser:
         - 5 → S
         
         例:
-        - "24/" → "247" (context: "\24/軽")
-        - "10B" → "108" (context: "\10B軽")
+        - "24" + context "\24/軽" → "247"
+        - "10" + context "\10B軽" → "108"
         """
-        # contextから手がかりを得る
-        # 例: "\24/軽" なら / を 7 に変換すべき
+        original_price = price_str
         
-        # 2桁または3桁で末尾が / → 7に変換
-        if len(price_str) in [2, 3] and '/' in context:
-            price_str = price_str.replace('/', '7')
+        # contextから価格部分を抽出してパターンマッチング
+        # 例: "\24/軽" なら "24/" がマッチ
         
-        # 末尾が B → 8に変換
-        if 'B' in context or 'b' in context:
-            price_str = price_str.replace('B', '8').replace('b', '8')
+        # パターン1: 2桁または3桁の価格で、contextに/が含まれる
+        # → 末尾に7を追加
+        if re.search(r'\\?' + re.escape(price_str) + r'[/\\/]', context):
+            price_str = price_str + '7'
         
-        # O → 0 に変換（ゼロと大文字O）
+        # パターン2: contextにBやbが含まれる
+        # → 末尾に8を追加または置換
+        elif re.search(r'\\?' + re.escape(price_str) + r'[Bb]', context):
+            price_str = price_str + '8'
+        
+        # 一般的な文字置換
+        price_str = price_str.replace('/', '7')
+        price_str = price_str.replace('B', '8').replace('b', '8')
         price_str = price_str.replace('O', '0').replace('o', '0')
-        
-        # S → 5 に変換
         price_str = price_str.replace('S', '5').replace('s', '5')
-        
-        # l（小文字L）→ 1 に変換
         price_str = price_str.replace('l', '1').replace('I', '1')
         
         return price_str
