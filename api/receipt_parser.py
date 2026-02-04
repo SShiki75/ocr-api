@@ -9,22 +9,26 @@ class ReceiptParser:
     # 除外する部分文字列（商品名に含まれていたら除外）
     EXCLUDE_PATTERNS = [
         # 税金・支払い関連
-        r'対象', r'消費税', r'税等', r'内\)', r'税込',
-        # 支払い方法
-        r'交通系', r'マネ', r'支払', r'カード', r'番号', r'残高',
+        r'対象', r'消費税', r'税等', r'内\)', r'税込', r'尼対', r'史.*半旬',
+        # 支払い方法（より厳格に）
+        r'交通系', r'マネ', r'支払', r'カード', r'番号', r'残高', r'交高', r'通泉', r'通系',
         # システム情報
-        r'レジ', r'領収', r'登録番号', r'電話', r'FamilyMart',
+        r'レジ', r'領収', r'登録番号', r'電話', r'FamilyMart', r'Faimilly',
         # 日付・時刻
         r'\d+年', r'\d+月', r'\d+日', r'\d+:\d+',
         # その他
-        r'クーポン', r'QR', r'ギフト', r'アプリ', r'ポイント',
+        r'クーポン', r'QR', r'ギフト', r'アプリ', r'ポイント', r'ファミマ', r'ペイ',
         # OCR誤認識パターン
         r'[0-9]{4,}',  # 4桁以上の連続数字（登録番号など）
+        r'消明', r'守\s*。\s*言', r'紅了',  # 税金情報の誤認識
+        r'器還', r'間較', r'灯倫', r'新窒',  # ヘッダー情報の誤認識
+        r'病\s*。\s*収', r'織', r'還較',  # その他の誤認識
     ]
     
     def __init__(self):
-        # 価格パターン: \247 or ¥247 or \24/軽 
-        self.price_pattern = re.compile(r'[¥￥\\]\s*(\d{2,5})\s*[/軽円]?')
+        # 価格パターン: \247, ¥247, %247 (OCRの誤認識に対応)
+        # TesseractはしばしばY¥を%と誤認識する
+        self.price_pattern = re.compile(r'[¥￥\\%]\s*(\d{2,5})\s*[/軽円]?')
         
         # 合計金額パターン
         self.total_pattern = re.compile(r'(合計|小計|計|お買上|買上|言十|書十)')
@@ -120,8 +124,16 @@ class ReceiptParser:
         original = price_str
         corrected = False
         
+        # 1桁価格の場合（例: %98 → \198, %68 → \168）
+        if len(price_str) == 2:
+            # 68 → 168, 98 → 198 のようなパターン
+            # ファミマの商品価格は100円台が多い
+            if 50 <= int(price_str) <= 99:
+                price_str = '1' + price_str
+                corrected = True
+        
         # 2桁価格で/が続く場合、末尾に7を追加
-        if len(price_str) == 2 and re.search(r'[/\\]', context):
+        elif len(price_str) == 2 and re.search(r'[/\\]', context):
             price_str = price_str + '7'
             corrected = True
         
