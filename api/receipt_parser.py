@@ -3,108 +3,115 @@ from typing import List, Dict, Optional
 
 class ReceiptParser:
     """
-    ファミリーマートのレシートを解析するクラス
-    
-    除外キーワード:
-    - 「軽」（軽減税率マーク）
-    - 「合計」「小計」（商品名ではない）
-    - 「8%対象」「(内)消費税等」などの税金情報
-    - 「交通系マネー」などの支払い方法
+    ファミリーマートのレシートを解析するクラス（改良版）
     """
     
+    # 解析をスキップするヘッダーキーワード
+    START_KEYWORDS = ['領収証', 'FamilyMart', 'ファミリーマート']
+    
+    # 除外キーワード（行内に含まれる場合にスキップ）
     EXCLUDE_KEYWORDS = [
-        '軽', '合計', '小計', '対象', '消費税', '税等', '内',
+        '対象', '消費税', '税等', '内', '非課税',
         '交通系', 'マネー', '支払', 'カード', '番号', '残高',
-        'レジ', '領収証', '登録番号', '電話', 'FamilyMart',
-        '店', '東京', '新宿', '年', '月', '日', '時', '分',
-        'クーポン', 'QR', 'ギフト', 'アプリ', '発行', '受取'
+        'レジ', '登録番号', '電話', '店', '年', '月', '日', '時', '分',
+        'クーポン', 'QR', 'ギフト', 'アプリ', '発行', '受取', 'キャンペーン'
     ]
     
     def __init__(self):
-        # 価格パターン: ¥123 or 123円 or ¥123軽
-        self.price_pattern = re.compile(r'[¥￥]?\s*(\d{1,5})\s*[円軽]?')
+        # 価格パターン: ¥ または ￥ の後の数字
+        self.price_pattern = re.compile(r'[¥￥]\s*(\d{1,6})')
         
-        # 合計金額パターン
-        self.total_pattern = re.compile(r'(合計|小計|計)\s*[¥￥]?\s*(\d{1,5})')
+        # 合計金額キーワード
+        self.total_keywords = ['合計', '小計', '計', 'TOTAL']
     
     def parse(self, ocr_text: str) -> Dict:
         """
         OCRテキストから商品名・価格・合計を抽出
-        
-        Returns:
-            {
-                "items": [{"name": "商品名", "price": 123}, ...],
-                "total": 355
-            }
         """
         lines = ocr_text.split('\n')
         items = []
         total_amount = None
         
-        for i, line in enumerate(lines):
+        # 解析開始フラグ（「領収証」などを見つけるまではスキップ）
+        start_parsing = False
+        
+        for line in lines:
             line = line.strip()
             if not line:
                 continue
             
-            # 合計金額を検出
-            total_match = self.total_pattern.search(line)
-            if total_match:
-                total_amount = int(total_match.group(2))
+            # 解析開始位置の特定
+            if not start_parsing:
+                if any(k in line for k in self.START_KEYWORDS):
+                    start_parsing = True
                 continue
+            
+            # 合計金額の検出（「合計」キーワードがある行、またはその付近）
+            if any(k in line for k in self.total_keywords):
+                # 行内に ￥ があればそれを合計とする
+                total_match = self.price_pattern.search(line)
+                if total_match:
+                    total_amount = int(total_match.group(1))
+                    continue # 合計行は商品として処理しない
             
             # 除外キーワードを含む行はスキップ
             if any(keyword in line for keyword in self.EXCLUDE_KEYWORDS):
                 continue
             
-            # 価格パターンを検出
+            # ￥ 記号を基準に商品名と価格を抽出
             price_match = self.price_pattern.search(line)
             if price_match:
                 price = int(price_match.group(1))
                 
-                # 商品名を抽出（価格の前の部分）
-                product_name = line[:price_match.start()].strip()
+                # ￥記号より前を商品名とする
+                raw_name = line[:price_match.start()].strip()
                 
                 # 商品名のクリーニング
-                product_name = self._clean_product_name(product_name)
+                product_name = self._clean_product_name(raw_name)
                 
-                # 有効な商品名のみ追加
+                # 有効な商品名（2文字以上）のみ追加
                 if product_name and len(product_name) >= 2:
-                    items.append({
-                        "name": product_name,
-                        "price": price
-                    })
+                    # 重複チェック（OCRの重複読み対策）
+                    if not any(item['name'] == product_name and item['price'] == price for item in items):
+                        items.append({
+                            "name": product_name,
+                            "price": price
+                        })
         
+        # もし合計が取れなかった場合、商品の合算を暫定合計とする（予備ロジック）
+        if total_amount is None and items:
+             # ただしレシートの性質上、合算は不正確になりやすいため、基本はOCR結果を優先
+             pass
+
         return {
             "items": items,
-            "total": total_amount
+            "total": total_amount,
+            "success": len(items) > 0 # 商品が1つでも取れれば成功とみなす
         }
     
     def _clean_product_name(self, name: str) -> str:
         """
-        商品名をクリーニング
-        
-        - 先頭の記号（◎、○、など）は保持
-        - 数字のみの行は除外
-        - 空白を正規化
+        商品名からノイズを除去
         """
-        # 空白を正規化
-        name = re.sub(r'\s+', '', name)
+        # レシートによく現れるノイズ文字・記号を除去
+        name = re.sub(r'[\|｜\-ｰ_＿\.．:：;；!！\(\)（）\+＋\*＊\?？]', '', name)
         
-        # 数字のみの場合は除外
+        # 行頭・行末の空白とゴミを除去
+        name = name.strip()
+        
+        # 数字のみの行は除外
         if name.isdigit():
             return ""
         
-        # 特殊記号の後に何もない場合は除外
-        if len(name) == 1 and not name.isalnum():
+        # 1文字の記号は除外
+        if len(name) <= 1 and not name.isalnum():
             return ""
-        
+            
         return name
     
     def format_output(self, result: Dict) -> str:
         """
         結果を指定フォーマットで出力
-        
-        例: 「ザバスプロテインフルー ¥247, ◎天然水新潟県津南６０ ¥108, 合計 ¥355」
         """
         parts = []
         
@@ -114,4 +121,4 @@ class ReceiptParser:
         if result['total']:
             parts.append(f"合計 ¥{result['total']}")
         
-        return ", ".join(parts)
+        return ", ".join(parts) if parts else "情報を抽出できませんでした"

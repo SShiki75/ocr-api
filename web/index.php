@@ -14,7 +14,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 // API設定
-define('API_URL', 'https://ocr-api-wh2v.onrender.com');
+define('API_URL', 'https://ocr-api-0sv3.onrender.com');
 
 // CSV保存先
 define('CSV_FILE', 'result.csv');
