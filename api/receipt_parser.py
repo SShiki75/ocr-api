@@ -3,81 +3,82 @@ from typing import List, Dict, Optional
 
 class ReceiptParser:
     """
-    ファミリーマートのレシートを解析するクラス（超堅牢版）
+    ファミリーマートのレシートを解析するクラス（究極堅牢版）
     """
     
-    # 除外キーワード（これらのみの行や、これらを含むノイズ行をスキップ）
+    # 完全に除外するキーワード（これらのみの行や、これらを含むノイズ行をスキップ）
     EXCLUDE_KEYWORDS = [
         '対象', '消費税', '税等', '内', '非課税',
         '交通系', 'マネー', '支払', 'カード', '番号', '残高',
         'レジ', '登録番号', '電話', '店', '年', '月', '日', '時', '分',
         'クーポン', 'QR', 'ギフト', 'アプリ', '発行', '受取', 'キャンペーン',
-        '軽減', '税率', '記号', 'URL'
+        '軽減', '税率', '記号', 'URL', 'サイト'
     ]
     
-    def __init__(self):
-        # 価格パターン: ￥/¥記号 またはその誤読(V, Y, \, |, 剖) + 数字
-        # もしくは行末の 3桁以上の数値
-        self.price_with_symbol = re.compile(r'[¥￥VvYy\\剖\|]\s*(\d{1,6})')
-        self.price_at_end = re.compile(r'\s+(\d{2,6})$')
-        
-        # 合計キーワード
-        self.total_keywords = ['合計', '小計', '計', 'TOTAL', '合', '計']
+    # 合計に関連するキーワード
+    TOTAL_KEYWORDS = ['合計', '小計', '計', 'TOTAL', '合', '計']
 
+    def __init__(self):
+        # ￥記号および誤読されやすい文字のパターン
+        self.symbol_pattern = r'[¥￥VvYy\\剖\|]'
+        
     def parse(self, ocr_text: str) -> Dict:
-        """
-        OCRテキストから商品名・価格・合計を抽出
-        """
+        """OCRテキストを解析して商品情報を抽出"""
         lines = ocr_text.split('\n')
         items = []
         total_amount = None
         
-        # 1. まず合計金額を優先的に探す（レシートの下の方から探すのが効率的）
-        for line in reversed(lines):
+        # 1. 合計金額の特定（逆順に走査）
+        for i, line in enumerate(reversed(lines)):
             line = line.strip()
-            if any(k in line for k in self.total_keywords):
-                # 合計行の価格抽出
-                m = self.price_with_symbol.search(line) or self.price_at_end.search(line)
-                if m:
-                    total_amount = int(m.group(1))
+            if any(k in line for k in self.TOTAL_KEYWORDS):
+                # 記号付きまたは行末の数値を合計として探す
+                price = self._find_price_in_text(line)
+                if price:
+                    total_amount = price
                     break
+                # 次の行（逆順なので上の行）もチェック
+                if i < len(lines) - 1:
+                    price = self._find_price_in_text(lines[-(i+2)])
+                    if price:
+                        total_amount = price
+                        break
 
-        # 2. 各行をスキャンして商品を探す
+        # 2. 商品アイテムの特定
         for i, line in enumerate(lines):
             line = line.strip()
-            if not line or len(line) < 3:
-                continue
-                
-            # 除外キーワードが含まれる場合はスキップ
+            if not line or len(line) < 3: continue
+            
+            # 除外キーワードチェック
             if any(k in line for k in self.EXCLUDE_KEYWORDS):
                 continue
             
-            # 合計金額そのものが含まれる行はスキップ（合計の二重取り防止）
-            if total_amount and str(total_amount) in line:
-                if any(k in line for k in self.total_keywords):
-                    continue
-
-            # 価格の抽出を試みる
-            match = self.price_with_symbol.search(line) or self.price_at_end.search(line)
-            
-            if match:
-                price = int(match.group(1))
-                # 記号の前を商品名とする
-                raw_name = line[:match.start()].strip()
+            # 価格を探す
+            price = self._find_price_in_text(line)
+            if price:
+                # 合計金額そのものと一致する場合はスキップ（重複防止）
+                if total_amount and price == total_amount:
+                    if any(k in line for k in self.TOTAL_KEYWORDS):
+                        continue
                 
-                # 商品名が空、または短すぎる場合、1つ上の行を商品名として見る（分離しているケース）
-                if (not raw_name or len(raw_name) < 2) and i > 0:
+                # 商品名（価格より前の文字列）を特定
+                price_index = line.rfind(str(price))
+                raw_name = line[:price_index].strip()
+                
+                # 記号（￥など）を除去
+                raw_name = re.sub(self.symbol_pattern, '', raw_name).strip()
+                
+                # 商品名が短すぎる場合、1行上のテキストを確認（商品名と価格が分かれているケース）
+                if len(self._clean_name(raw_name)) < 2 and i > 0:
                     prev_line = lines[i-1].strip()
                     if len(prev_line) >= 2 and not any(k in prev_line for k in self.EXCLUDE_KEYWORDS):
                         raw_name = prev_line
-
-                product_name = self._clean_product_name(raw_name)
                 
-                # 有効な商品名（2文字以上）のみ追加
-                if product_name and len(product_name) >= 2:
-                    # 重複チェック
-                    if not any(item['name'] == product_name for item in items):
-                        items.append({"name": product_name, "price": price})
+                clean_name = self._clean_name(raw_name)
+                if len(clean_name) >= 2:
+                    # 重複登録を避ける
+                    if not any(item['name'] == clean_name for item in items):
+                        items.append({"name": clean_name, "price": price})
 
         return {
             "items": items,
@@ -85,27 +86,44 @@ class ReceiptParser:
             "success": len(items) > 0 or total_amount is not None
         }
 
-    def _clean_product_name(self, name: str) -> str:
-        """
-        商品名から記号やゴミを除去
-        """
-        # 一般的なノイズ記号を除去
-        name = re.sub(r'[\|｜\-ｰ_＿\.．:：;；!！\(\)（）\+＋\*＊\?？@＠#＃\$＄%％&\^]', '', name)
-        
-        # 空白除去
-        name = name.replace(' ', '')
-        
-        # 先頭や末尾の不要な文字を削る
-        name = name.strip('っ、。・-')
-        
-        # 数字のみ、または短すぎるものは除外
-        if name.isdigit() or len(name) < 2:
-            return ""
+    def _find_price_in_text(self, text: str) -> Optional[int]:
+        """テキスト内から「価格」と思われる最適な数値を1つ抽出"""
+        # A. 記号 + 数値 のパターン (例: ￥150, 剖150, V150)
+        symbol_match = re.search(self.symbol_pattern + r'\s*([\d,]{1,8})', text)
+        if symbol_match:
+            return self._to_int(symbol_match.group(1))
             
+        # B. 行末近くの 2-6 桁の数値
+        end_match = re.search(r'(\d[, \d]{2,7})$', text)
+        if end_match:
+            return self._to_int(end_match.group(1))
+            
+        return None
+
+    def _to_int(self, s: str) -> Optional[int]:
+        """文字列を数値に変換（カンマやスペースを除去）"""
+        s = re.sub(r'[^\d]', '', s)
+        try:
+            val = int(s)
+            # 現実的な価格帯（1円〜100万円）を対象
+            if 1 <= val <= 1000000:
+                return val
+        except:
+            pass
+        return None
+
+    def _clean_name(self, name: str) -> str:
+        """商品名からゴミ記号を徹底除去"""
+        # レシートによく出る記号・誤読ノイズを除去
+        name = re.sub(r'[\|｜\-ｰ_＿\.．:：;；!！\(\)（）\+＋\*＊\?？@＠#＃\$＄%％&\^=＝/／\\剖]', '', name)
+        # 空白と全角空白を除去
+        name = name.replace(' ', '').replace('　', '')
+        # 先頭・末尾の特定の文字（。、など）を削る
+        name = name.strip('っ、。・-「」')
         return name
 
     def format_output(self, result: Dict) -> str:
-        """結果出力フォーマット"""
+        """表示用文字列の生成"""
         if not result['items'] and not result['total']:
             return "情報を抽出できませんでした"
             
