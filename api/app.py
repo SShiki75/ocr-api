@@ -12,7 +12,7 @@ from utils import preprocess_image, resize_image
 from receipt_parser import ReceiptParser
 
 # ログ設定
-LOG_FILE = "logs/ocr.log"
+LOG_FILE = "/app/logs/ocr.log"
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 logging.basicConfig(
